@@ -1,4 +1,6 @@
 pandas==2.2.2
+numpy==1.26.4
 scikit-learn==1.4.2
 joblib==1.4.2
+skops==0.10.0
 streamlit==1.37.1
