@@ -5,35 +5,20 @@ import skops.io as sio
 
 st.set_page_config(page_title="Diamond Price Intelligence")
 
-@st.cache_resource
+# --- Load once and persist across reruns ---
+if "models_loaded" not in st.session_state:
+    st.session_state.models_loaded = False
+
 def load_models():
-    # 👇 Tell skops we trust this artifact (we trained it)
+    # If you want to inspect what skops flags as unsafe, uncomment lines below:
+    # st.write("Untrusted (reg):", sio.get_untrusted_types("models/diamond_price_regressor.skops"))
+    # st.write("Untrusted (clf):", sio.get_untrusted_types("models/diamond_price_range_classifier.skops"))
+
     reg = sio.load("models/diamond_price_regressor.skops", trusted=True)
     clf = sio.load("models/diamond_price_range_classifier.skops", trusted=True)
     with open("models/input_schema.json","r") as f:
         schema = json.load(f)
     return reg, clf, schema
-
-
-# Try skops first; fall back to joblib if not available or if .joblib files exist
-USE_SKOPS = False
-try:
-    import skops.io as sio
-    USE_SKOPS = True
-except Exception:
-    import joblib
-
-st.set_page_config(page_title="Diamond Price Intelligence")
-
-def load_schema():
-    with open("models/input_schema.json","r") as f:
-        return json.load(f)
-
-
-
-# Session state to avoid reload loops
-if "models_loaded" not in st.session_state:
-    st.session_state.models_loaded = False
 
 st.title("Diamond Price Intelligence")
 
@@ -44,10 +29,10 @@ if st.button("Load models") or st.session_state.models_loaded:
         st.session_state.clf = clf
         st.session_state.schema = schema
         st.session_state.models_loaded = True
-    st.success("Models are loaded and ready.")
+    st.success("✅ Models are loaded and ready!")
 
 if not st.session_state.models_loaded:
-    st.warning("Click 'Load models' to start.")
+    st.warning("Click **Load models** to start.")
     st.stop()
 
 schema = st.session_state.schema
