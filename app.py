@@ -1,32 +1,52 @@
 import json
+import os
 import pandas as pd
 import streamlit as st
-import skops.io as sio
+
+# Try skops first; fall back to joblib if not available or if .joblib files exist
+USE_SKOPS = False
+try:
+    import skops.io as sio
+    USE_SKOPS = True
+except Exception:
+    import joblib
 
 st.set_page_config(page_title="Diamond Price Intelligence")
 
-# --- Load models into session state ---
+def load_schema():
+    with open("models/input_schema.json","r") as f:
+        return json.load(f)
+
+def load_models():
+    if USE_SKOPS and os.path.exists("models/diamond_price_regressor.skops"):
+        reg = sio.load("models/diamond_price_regressor.skops")
+        clf = sio.load("models/diamond_price_range_classifier.skops")
+    else:
+        # Fallback for legacy joblib artifacts
+        reg = joblib.load("models/diamond_price_regressor.joblib")
+        clf = joblib.load("models/diamond_price_range_classifier.joblib")
+    schema = load_schema()
+    return reg, clf, schema
+
+# Session state to avoid reload loops
 if "models_loaded" not in st.session_state:
     st.session_state.models_loaded = False
 
+st.title("Diamond Price Intelligence")
+
 if st.button("Load models") or st.session_state.models_loaded:
     if not st.session_state.models_loaded:
-        reg = sio.load("models/diamond_price_regressor.skops")
-        clf = sio.load("models/diamond_price_range_classifier.skops")
-        with open("models/input_schema.json", "r") as f:
-            schema = json.load(f)
+        reg, clf, schema = load_models()
         st.session_state.reg = reg
         st.session_state.clf = clf
         st.session_state.schema = schema
         st.session_state.models_loaded = True
-    st.success("✅ Models are loaded and ready!")
+    st.success("Models are loaded and ready.")
 
-# --- If models not loaded, stop here ---
 if not st.session_state.models_loaded:
-    st.warning("Click **Load models** to start.")
+    st.warning("Click 'Load models' to start.")
     st.stop()
 
-# --- Build input form ---
 schema = st.session_state.schema
 numeric_features = schema["numeric_features"]
 categorical_features = schema["categorical_features"]
@@ -49,7 +69,6 @@ input_df = pd.DataFrame([{
     "cut": cut, "color": color, "clarity": clarity
 }], columns=numeric_features + categorical_features)
 
-# --- Prediction mode ---
 mode = st.radio("Choose task", ["Price Prediction", "Price Range Classification"], horizontal=True)
 
 if st.button("Predict"):
