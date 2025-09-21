@@ -1,15 +1,28 @@
 import json
+import os
+import traceback
 import joblib
 import pandas as pd
 import streamlit as st
 
-@st.cache_resource
-def load_models():
-    reg = joblib.load("models/diamond_price_regressor.joblib")
-    clf = joblib.load("models/diamond_price_range_classifier.joblib")
-    with open("models/input_schema.json", "r") as f:
-        schema = json.load(f)
-    return reg, clf, schema
+def env_report():
+    import sklearn, numpy, pandas
+    return {
+        "sklearn": sklearn.__version__,
+        "numpy": numpy.__version__,
+        "pandas": pandas.__version__,
+        "joblib": joblib.__version__,
+    }
+
+def safe_load_models():
+    try:
+        reg = joblib.load("models/diamond_price_regressor.joblib")
+        clf = joblib.load("models/diamond_price_range_classifier.joblib")
+        with open("models/input_schema.json", "r") as f:
+            schema = json.load(f)
+        return reg, clf, schema, None
+    except Exception as e:
+        return None, None, None, "".join(traceback.format_exception_only(type(e), e)).strip()
 
 def build_input_df(schema):
     numeric_features = schema["numeric_features"]
@@ -17,18 +30,16 @@ def build_input_df(schema):
 
     st.sidebar.header("Diamond Features")
 
-    # Numeric inputs with reasonable ranges
-    carat = st.sidebar.number_input("carat", min_value=0.0, max_value=6.0, value=0.7, step=0.01, format="%.2f")
-    depth = st.sidebar.number_input("depth", min_value=40.0, max_value=80.0, value=61.5, step=0.1, format="%.1f")
-    table = st.sidebar.number_input("table", min_value=40.0, max_value=85.0, value=57.0, step=0.1, format="%.1f")
-    x = st.sidebar.number_input("x (mm)", min_value=0.0, max_value=12.0, value=5.7, step=0.01, format="%.2f")
-    y = st.sidebar.number_input("y (mm)", min_value=0.0, max_value=12.0, value=5.7, step=0.01, format="%.2f")
-    z = st.sidebar.number_input("z (mm)", min_value=0.0, max_value=12.0, value=3.5, step=0.01, format="%.2f")
+    carat = st.sidebar.number_input("carat", 0.0, 6.0, 0.7, 0.01, format="%.2f")
+    depth = st.sidebar.number_input("depth", 40.0, 80.0, 61.5, 0.1, format="%.1f")
+    table = st.sidebar.number_input("table", 40.0, 85.0, 57.0, 0.1, format="%.1f")
+    x = st.sidebar.number_input("x (mm)", 0.0, 12.0, 5.7, 0.01, format="%.2f")
+    y = st.sidebar.number_input("y (mm)", 0.0, 12.0, 5.7, 0.01, format="%.2f")
+    z = st.sidebar.number_input("z (mm)", 0.0, 12.0, 3.5, 0.01, format="%.2f")
 
-    # Categorical inputs constrained to training category order
-    cut = st.sidebar.selectbox("cut", schema["cut_categories"], index=schema["cut_categories"].index("Ideal") if "Ideal" in schema["cut_categories"] else 0)
-    color = st.sidebar.selectbox("color", schema["color_categories"], index=schema["color_categories"].index("G") if "G" in schema["color_categories"] else 0)
-    clarity = st.sidebar.selectbox("clarity", schema["clarity_categories"], index=schema["clarity_categories"].index("VS2") if "VS2" in schema["clarity_categories"] else 0)
+    cut = st.sidebar.selectbox("cut", ["Fair","Good","Very Good","Premium","Ideal"], index=4)
+    color = st.sidebar.selectbox("color", ["J","I","H","G","F","E","D"], index=3)
+    clarity = st.sidebar.selectbox("clarity", ["I1","SI2","SI1","VS2","VS1","VVS2","VVS1","IF"], index=3)
 
     data = {
         "carat": [carat],
@@ -41,17 +52,33 @@ def build_input_df(schema):
         "color": [color],
         "clarity": [clarity],
     }
-
-    df = pd.DataFrame(data, columns=numeric_features + categorical_features)
-    return df
+    return pd.DataFrame(data, columns=numeric_features + categorical_features)
 
 def main():
     st.title("Diamond Price Intelligence")
-    st.write("Estimate exact price or classify a diamond into Low/Medium/High price bands.")
 
-    reg, clf, schema = load_models()
+    with st.expander("Environment versions (diagnostics)"):
+        st.json(env_report())
+
+    if not os.path.exists("models"):
+        st.error("The 'models' folder is missing in the repo.")
+        return
 
     mode = st.radio("Choose task", ["Price Prediction", "Price Range Classification"], horizontal=True)
+
+    load_now = st.button("Load models")
+    if not load_now:
+        st.info("Click 'Load models' to initialize the predictors.")
+        return
+
+    reg, clf, schema, err = safe_load_models()
+    if err:
+        st.error("Model loading failed.\n\n" + err)
+        st.warning(
+            "If you trained in Colab with scikit-learn 1.4.2 but Streamlit uses a different version, "
+            "pin exact versions in requirements.txt as shown in the guide, then reboot the app."
+        )
+        return
 
     input_df = build_input_df(schema)
 
@@ -65,12 +92,10 @@ def main():
             st.subheader("Estimated Price Band")
             st.metric(label="Band", value=band)
             thr = schema["price_band_thresholds"]["low_high_split"]
-            st.caption(f"Bands were derived from dataset quantiles: Low ≤ {thr[0]:.0f}, Medium ≤ {thr[1]:.0f}, High > {thr[1]:.0f}")
+            st.caption(f"Bands from training quantiles: Low ≤ {thr[0]:.0f}, Medium ≤ {thr[1]:.0f}, High > {thr[1]:.0f}")
 
     with st.expander("Show example input row"):
         st.dataframe(input_df)
-
-    st.caption("Models trained with scikit-learn on the classic diamonds dataset. Preprocessing is baked into the pipelines for safe inference.")
 
 if __name__ == "__main__":
     main()
