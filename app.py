@@ -1,7 +1,19 @@
 import json
-import os
 import pandas as pd
 import streamlit as st
+import skops.io as sio
+
+st.set_page_config(page_title="Diamond Price Intelligence")
+
+@st.cache_resource
+def load_models():
+    # 👇 Tell skops we trust this artifact (we trained it)
+    reg = sio.load("models/diamond_price_regressor.skops", trusted=True)
+    clf = sio.load("models/diamond_price_range_classifier.skops", trusted=True)
+    with open("models/input_schema.json","r") as f:
+        schema = json.load(f)
+    return reg, clf, schema
+
 
 # Try skops first; fall back to joblib if not available or if .joblib files exist
 USE_SKOPS = False
@@ -17,16 +29,7 @@ def load_schema():
     with open("models/input_schema.json","r") as f:
         return json.load(f)
 
-def load_models():
-    if USE_SKOPS and os.path.exists("models/diamond_price_regressor.skops"):
-        reg = sio.load("models/diamond_price_regressor.skops")
-        clf = sio.load("models/diamond_price_range_classifier.skops")
-    else:
-        # Fallback for legacy joblib artifacts
-        reg = joblib.load("models/diamond_price_regressor.joblib")
-        clf = joblib.load("models/diamond_price_range_classifier.joblib")
-    schema = load_schema()
-    return reg, clf, schema
+
 
 # Session state to avoid reload loops
 if "models_loaded" not in st.session_state:
